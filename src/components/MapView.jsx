@@ -129,14 +129,22 @@ export default function MapView({ ancestors, unmapped, onReset, onViewAs, onView
     return { type: 'FeatureCollection', features }
   }, [ancestors])
 
-  const initialBounds = useMemo(() => {
+  const initialView = useMemo(() => {
     if (ancestors.length === 0) return undefined
+    // Center on the root person (generation 0) if they have coordinates
+    const root = ancestors.find((a) => a.generation === 0)
+    if (root) {
+      return { center: { longitude: root.lng, latitude: root.lat, zoom: 5 } }
+    }
+    // Fallback: fit bounds around all ancestors
     const lngs = ancestors.map((a) => a.lng)
     const lats = ancestors.map((a) => a.lat)
-    return [
-      [Math.min(...lngs) - 2, Math.min(...lats) - 2],
-      [Math.max(...lngs) + 2, Math.max(...lats) + 2],
-    ]
+    return {
+      bounds: [
+        [Math.min(...lngs) - 2, Math.min(...lats) - 2],
+        [Math.max(...lngs) + 2, Math.max(...lats) + 2],
+      ],
+    }
   }, [ancestors])
 
   const flyTo = useCallback((lng, lat) => {
@@ -245,9 +253,11 @@ export default function MapView({ ancestors, unmapped, onReset, onViewAs, onView
       <MapGL
         ref={mapRef}
         initialViewState={
-          initialBounds
-            ? { bounds: initialBounds, fitBoundsOptions: { padding: 60 } }
-            : { longitude: 0, latitude: 30, zoom: 2 }
+          initialView?.center
+            ? initialView.center
+            : initialView?.bounds
+              ? { bounds: initialView.bounds, fitBoundsOptions: { padding: 60 } }
+              : { longitude: 0, latitude: 30, zoom: 2 }
         }
         style={{ width: '100%', height: '100%' }}
         mapStyle="mapbox://styles/mapbox/dark-v11"
