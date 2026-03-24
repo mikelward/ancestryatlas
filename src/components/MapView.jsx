@@ -57,7 +57,7 @@ const unclusteredLabelLayer = {
     'text-size': 12,
     'text-anchor': 'left',
     'text-offset': [1.2, 0],
-    'text-allow-overlap': false,
+    'text-allow-overlap': true,
     'text-optional': true,
     'text-max-width': 12,
   },
@@ -97,11 +97,12 @@ export default function MapView({ ancestors, unmapped, onReset, onViewAs, onView
   }, [ancestors])
 
   const geojson = useMemo(() => {
-    // Spread co-located points in a small circle so they don't stack
-    // into one dot. ~0.002° ≈ 200m — invisible when zoomed out (clustering
-    // handles that), but separates dots when zoomed into a town.
-    const RADIUS = 0.002
-    const coordKey = (a) => `${a.lng.toFixed(4)},${a.lat.toFixed(4)}`
+    // Stack co-located points vertically so they don't overlap into
+    // one dot. Points within ~1km are grouped together and spread
+    // along the latitude axis with ~3km spacing — enough that dots
+    // (20px diameter) don't visually overlap at typical zoom levels.
+    const STEP_LAT = 0.03
+    const coordKey = (a) => `${a.lng.toFixed(2)},${a.lat.toFixed(2)}`
     const groups = new globalThis.Map()
     for (const a of ancestors) {
       const key = coordKey(a)
@@ -111,27 +112,18 @@ export default function MapView({ ancestors, unmapped, onReset, onViewAs, onView
 
     const features = []
     for (const group of groups.values()) {
-      if (group.length === 1) {
-        const a = group[0]
+      // Center the stack so the midpoint is at the original location
+      const offsetStart = -((group.length - 1) / 2) * STEP_LAT
+      group.forEach((a, i) => {
         features.push({
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: [a.lng, a.lat] },
+          geometry: {
+            type: 'Point',
+            coordinates: [a.lng, a.lat + offsetStart + i * STEP_LAT],
+          },
           properties: { id: a.id, name: a.name },
         })
-      } else {
-        // Arrange in a circle around the shared location
-        const step = (2 * Math.PI) / group.length
-        group.forEach((a, i) => {
-          const angle = step * i - Math.PI / 2 // start at top
-          const lng = a.lng + RADIUS * Math.cos(angle)
-          const lat = a.lat + RADIUS * Math.sin(angle)
-          features.push({
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: [lng, lat] },
-            properties: { id: a.id, name: a.name },
-          })
-        })
-      }
+      })
     }
 
     return { type: 'FeatureCollection', features }
@@ -269,8 +261,8 @@ export default function MapView({ ancestors, unmapped, onReset, onViewAs, onView
           type="geojson"
           data={geojson}
           cluster={true}
-          clusterMaxZoom={12}
-          clusterRadius={40}
+          clusterMaxZoom={6}
+          clusterRadius={30}
         >
           <Layer {...clusterLayer} />
           <Layer {...clusterCountLayer} />

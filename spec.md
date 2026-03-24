@@ -185,18 +185,18 @@ Each name is clickable (amber link), opening the ancestor's detail card (bottom 
 
 Mapbox GL built-in GeoJSON clustering:
 - `cluster: true` on the Source
-- `clusterMaxZoom: 9` (clusters stop forming at zoom 10+)
-- `clusterRadius: 35` (smaller than default to expand clusters sooner)
+- `clusterMaxZoom: 6` (clusters break apart early so users don't have to zoom much)
+- `clusterRadius: 30` (tight grouping — only truly nearby points cluster)
 
 ### Co-located Points
 
-Multiple ancestors born in the same place share identical coordinates and would permanently cluster. To fix this, co-located points are stacked vertically with a small offset (~0.008° ≈ 800m per step), centered on the original coordinate. This keeps them visually grouped at the same location while showing individual labels.
+Multiple ancestors born in the same place share identical coordinates and would permanently cluster. To fix this, co-located points are stacked vertically with ~0.03° (~3km) spacing, centered on the original coordinate. This keeps them visually grouped while ensuring dots don't overlap at typical zoom levels.
 
 Four layers:
 1. **clusters** — amber circles, size 20→30→40px based on point count
 2. **cluster-count** — text labels showing abbreviated count
 3. **unclustered-point** — amber circles (8px) with white stroke
-4. **unclustered-label** — name labels that fade in at zoom 4–5, positioned to the right of the dot. Uses text halo for readability on dark map. `text-allow-overlap: false` prevents label collisions.
+4. **unclustered-label** — name labels positioned to the right of the dot. Uses text halo for readability on dark map. `text-allow-overlap: true` ensures all labels in a stack are visible.
 
 ### Click Handling
 
