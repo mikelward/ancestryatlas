@@ -60,7 +60,7 @@ function useIsMobile() {
   return isMobile
 }
 
-export default function MapView({ ancestors, failedCount, onReset }) {
+export default function MapView({ ancestors, unmapped, onReset }) {
   const mapRef = useRef(null)
   const [selected, setSelected] = useState(null)
   const [popupPos, setPopupPos] = useState(null)
@@ -165,14 +165,20 @@ export default function MapView({ ancestors, failedCount, onReset }) {
     [ancestorLookup, flyTo]
   )
 
+  const handleSelectUnmapped = useCallback((ancestor) => {
+    setSelected(ancestor)
+    setPopupPos(null)
+  }, [])
+
   const handleClose = useCallback(() => setSelected(null), [])
 
   return (
     <div className="w-full h-screen relative">
       <StatsOverlay
         ancestors={ancestors}
-        failedCount={failedCount}
+        unmapped={unmapped}
         onReset={onReset}
+        onSelectUnmapped={handleSelectUnmapped}
       />
 
       <MapGL

@@ -105,16 +105,16 @@ export function MobileSheet({ ancestor, open, onClose, onNavigate }) {
 }
 
 export function DesktopPopup({ ancestor, position, onClose, onNavigate }) {
-  if (!ancestor || !position) return null
+  if (!ancestor) return null
+
+  const style = position
+    ? { left: position.x, top: position.y, transform: 'translate(-50%, -110%)' }
+    : { right: 16, top: 80 }
 
   return (
     <div
       className="absolute z-30 w-72 bg-gray-900 rounded-xl shadow-2xl border border-gray-800 p-5"
-      style={{
-        left: position.x,
-        top: position.y,
-        transform: 'translate(-50%, -110%)',
-      }}
+      style={style}
     >
       <button
         onClick={onClose}

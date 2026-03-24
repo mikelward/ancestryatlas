@@ -9,30 +9,30 @@ function App() {
   const [state, setState] = useState('upload') // upload | loading | map
   const [ancestors, setAncestors] = useState([])
   const [geocodeProgress, setGeocodeProgress] = useState({ done: 0, total: 0 })
-  const [failedCount, setFailedCount] = useState(0)
+  const [unmapped, setUnmapped] = useState({ noPlace: [], geocodeFailed: [] })
 
   const [error, setError] = useState(null)
 
   const handleFileUpload = useCallback(async (file) => {
     try {
       const text = await file.text()
-      const parsed = parseGedcom(text)
+      const { withPlace, noPlace } = parseGedcom(text)
 
-      if (parsed.length === 0) {
-        setError('No ancestors with birth places found in this file.')
+      if (withPlace.length === 0 && noPlace.length === 0) {
+        setError('No ancestors found in this file.')
         return
       }
 
       setError(null)
       setState('loading')
-      setGeocodeProgress({ done: 0, total: parsed.length })
+      setGeocodeProgress({ done: 0, total: withPlace.length })
 
-      const { geocoded, failed } = await geocodeAncestors(parsed, (done) => {
+      const { geocoded, geocodeFailed } = await geocodeAncestors(withPlace, (done) => {
         setGeocodeProgress((prev) => ({ ...prev, done }))
       })
 
       setAncestors(geocoded)
-      setFailedCount(failed)
+      setUnmapped({ noPlace, geocodeFailed })
       setState('map')
     } catch (err) {
       console.error('Failed to process GEDCOM file:', err)
@@ -45,7 +45,7 @@ function App() {
     setState('upload')
     setAncestors([])
     setGeocodeProgress({ done: 0, total: 0 })
-    setFailedCount(0)
+    setUnmapped({ noPlace: [], geocodeFailed: [] })
   }, [])
 
   if (state === 'upload') {
@@ -64,7 +64,7 @@ function App() {
   return (
     <MapView
       ancestors={ancestors}
-      failedCount={failedCount}
+      unmapped={unmapped}
       onReset={handleReset}
     />
   )
