@@ -105,6 +105,8 @@ function extractIndividuals(tree) {
     const famcRefs = findAllChildren(node, 'FAMC').map((c) => c.pointer || c.value)
     const famsRefs = findAllChildren(node, 'FAMS').map((c) => c.pointer || c.value)
 
+    const sex = findChildValue(node, 'SEX') || null
+
     const objeNode = findChild(node, 'OBJE')
     const photo = objeNode ? findChildValue(objeNode, 'FILE') : null
 
@@ -118,6 +120,7 @@ function extractIndividuals(tree) {
       famcRefs,
       famsRefs,
       photo,
+      sex,
       parentIds: [],
       childIds: [],
     })
@@ -164,21 +167,46 @@ function findRootPerson(individuals) {
   return individuals.keys().next().value
 }
 
+function getRelationshipLabel(generation, sex, side) {
+  if (generation === 0) return null
+
+  const isMale = sex === 'M'
+  const isFemale = sex === 'F'
+  const prefix = side && generation >= 2 ? `${side} ` : ''
+
+  if (generation === 1) return isMale ? 'Father' : isFemale ? 'Mother' : 'Parent'
+  if (generation === 2) {
+    const noun = isMale ? 'Grandfather' : isFemale ? 'Grandmother' : 'Grandparent'
+    return prefix + noun
+  }
+
+  const greats = generation - 2
+  const greatStr = greats === 1 ? 'Great-' : greats === 2 ? 'Great-great-' : `${greats}× Great-`
+  const base = isMale ? 'grandfather' : isFemale ? 'grandmother' : 'grandparent'
+  return prefix + greatStr + base
+}
+
 function collectDirectAncestors(individuals, rootId, maxGenerations = 4) {
   const result = new Map()
-  const queue = [{ id: rootId, generation: 0 }]
+  const queue = [{ id: rootId, generation: 0, side: null }]
 
   while (queue.length > 0) {
-    const { id, generation } = queue.shift()
+    const { id, generation, side } = queue.shift()
     if (!id || result.has(id) || !individuals.has(id)) continue
     if (generation > maxGenerations) continue
 
     const person = individuals.get(id)
-    result.set(id, { ...person, generation })
+    // For gen 1, determine side from the person's sex
+    const personSide =
+      generation === 0 ? null :
+      generation === 1 ? (person.sex === 'M' ? 'Paternal' : person.sex === 'F' ? 'Maternal' : null) :
+      side
+    const relationship = getRelationshipLabel(generation, person.sex, personSide)
+    result.set(id, { ...person, generation, relationship })
 
     for (const parentId of person.parentIds) {
       if (!result.has(parentId)) {
-        queue.push({ id: parentId, generation: generation + 1 })
+        queue.push({ id: parentId, generation: generation + 1, side: personSide })
       }
     }
   }
@@ -195,10 +223,10 @@ export function parseGedcom(gedcomText) {
   const rootId = findRootPerson(individuals)
   const ancestors = collectDirectAncestors(individuals, rootId, 4)
 
-  const result = []
-  for (const [id, person] of ancestors) {
-    if (!person.birthPlace) continue
+  const withPlace = []
+  const noPlace = []
 
+  for (const [id, person] of ancestors) {
     const parents = person.parentIds
       .filter((pid) => ancestors.has(pid))
       .map((pid) => ({ id: pid, name: ancestors.get(pid).name }))
@@ -207,7 +235,7 @@ export function parseGedcom(gedcomText) {
       .filter((cid) => ancestors.has(cid))
       .map((cid) => ({ id: cid, name: ancestors.get(cid).name }))
 
-    result.push({
+    const entry = {
       id,
       name: person.name,
       birthDate: person.birthDate,
@@ -216,10 +244,17 @@ export function parseGedcom(gedcomText) {
       deathPlace: person.deathPlace,
       photo: person.photo,
       generation: person.generation,
+      relationship: person.relationship,
       parents,
       children,
-    })
+    }
+
+    if (person.birthPlace) {
+      withPlace.push(entry)
+    } else {
+      noPlace.push(entry)
+    }
   }
 
-  return result
+  return { withPlace, noPlace }
 }

@@ -8,9 +8,9 @@ const GEN_LABELS = [
   'Great-great-grandparents',
 ]
 
-export default function AncestorSidebar({ ancestors, unmapped, onSelect, selectedId, open, onOpenChange }) {
+export default function AncestorSidebar({ ancestors, unmapped, onSelect, selectedId }) {
   const [search, setSearch] = useState('')
-  const setOpen = onOpenChange
+  const [open, setOpen] = useState(true)
 
   const { noPlace = [], geocodeFailed = [] } = unmapped
   const allAncestors = useMemo(() => {
