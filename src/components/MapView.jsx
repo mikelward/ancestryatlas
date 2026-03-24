@@ -95,7 +95,10 @@ export default function MapView({ ancestors, failedCount, onReset }) {
   }, [ancestors])
 
   const flyTo = useCallback((lng, lat) => {
-    mapRef.current?.flyTo({ center: [lng, lat], zoom: 8, duration: 1500 })
+    const ref = mapRef.current
+    if (!ref) return
+    const map = ref.getMap ? ref.getMap() : ref
+    map.flyTo({ center: [lng, lat], zoom: 8, duration: 1500 })
   }, [])
 
   const handleNavigate = useCallback(
@@ -110,8 +113,11 @@ export default function MapView({ ancestors, failedCount, onReset }) {
 
   const handleClick = useCallback(
     (e) => {
-      const map = mapRef.current
-      if (!map) return
+      const mapWrapper = mapRef.current
+      if (!mapWrapper) return
+
+      // Get the raw Mapbox GL map instance for direct API access
+      const map = mapWrapper.getMap ? mapWrapper.getMap() : mapWrapper
 
       // Check for cluster clicks
       const clusterFeatures = map.queryRenderedFeatures(e.point, {
@@ -120,15 +126,21 @@ export default function MapView({ ancestors, failedCount, onReset }) {
       if (clusterFeatures.length > 0) {
         const clusterId = clusterFeatures[0].properties.cluster_id
         const source = map.getSource('ancestors')
-        source
-          .getClusterExpansionZoom(clusterId)
-          .then((zoom) => {
-            map.easeTo({
-              center: clusterFeatures[0].geometry.coordinates,
-              zoom,
-            })
+        const result = source.getClusterExpansionZoom(clusterId)
+        const handleZoom = (zoom) => {
+          map.easeTo({
+            center: clusterFeatures[0].geometry.coordinates,
+            zoom,
           })
-          .catch(() => {})
+        }
+        // Handle both promise-based and callback-based API
+        if (result && typeof result.then === 'function') {
+          result.then(handleZoom).catch(() => {})
+        } else {
+          source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+            if (!err) handleZoom(zoom)
+          })
+        }
         return
       }
 
