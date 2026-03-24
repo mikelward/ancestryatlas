@@ -214,14 +214,37 @@ function collectDirectAncestors(individuals, rootId, maxGenerations = 4) {
   return result
 }
 
-export function parseGedcom(gedcomText) {
+/**
+ * Parse a GEDCOM file and return all individuals with family links.
+ * This is the first step — call collectAncestorsForRoot() next with a chosen root.
+ */
+export function parseGedcomFile(gedcomText) {
   const tokens = tokenize(gedcomText)
   const tree = buildTree(tokens)
   const individuals = extractIndividuals(tree)
   buildFamilyLinks(tree, individuals)
 
-  const rootId = findRootPerson(individuals)
-  const ancestors = collectDirectAncestors(individuals, rootId, 4)
+  const defaultRootId = findRootPerson(individuals)
+
+  // Build a lightweight list for the person picker
+  const allPeople = []
+  for (const [id, person] of individuals) {
+    allPeople.push({
+      id,
+      name: person.name,
+      birthDate: person.birthDate,
+      birthPlace: person.birthPlace,
+    })
+  }
+
+  return { individuals, defaultRootId, allPeople }
+}
+
+/**
+ * Collect direct ancestors for a given root person and split into withPlace/noPlace.
+ */
+export function collectAncestorsForRoot(individuals, rootId, maxGenerations = 4) {
+  const ancestors = collectDirectAncestors(individuals, rootId, maxGenerations)
 
   const withPlace = []
   const noPlace = []
@@ -245,6 +268,46 @@ export function parseGedcom(gedcomText) {
       photo: person.photo,
       generation: person.generation,
       relationship: person.relationship,
+      parents,
+      children,
+    }
+
+    if (person.birthPlace) {
+      withPlace.push(entry)
+    } else {
+      noPlace.push(entry)
+    }
+  }
+
+  return { withPlace, noPlace }
+}
+
+/**
+ * Collect ALL people in the file, split into withPlace/noPlace.
+ */
+export function collectAll(individuals) {
+  const withPlace = []
+  const noPlace = []
+
+  for (const [id, person] of individuals) {
+    const parents = person.parentIds
+      .filter((pid) => individuals.has(pid))
+      .map((pid) => ({ id: pid, name: individuals.get(pid).name }))
+
+    const children = person.childIds
+      .filter((cid) => individuals.has(cid))
+      .map((cid) => ({ id: cid, name: individuals.get(cid).name }))
+
+    const entry = {
+      id,
+      name: person.name,
+      birthDate: person.birthDate,
+      birthPlace: person.birthPlace,
+      deathDate: person.deathDate,
+      deathPlace: person.deathPlace,
+      photo: person.photo,
+      generation: null,
+      relationship: null,
       parents,
       children,
     }

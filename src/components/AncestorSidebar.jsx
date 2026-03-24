@@ -8,9 +8,9 @@ const GEN_LABELS = [
   'Great-great-grandparents',
 ]
 
-export default function AncestorSidebar({ ancestors, unmapped, onSelect, selectedId }) {
+export default function AncestorSidebar({ ancestors, unmapped, onSelect, selectedId, open, onOpenChange, onViewAs, onViewAll }) {
   const [search, setSearch] = useState('')
-  const [open, setOpen] = useState(true)
+  const setOpen = onOpenChange
 
   const { noPlace = [], geocodeFailed = [] } = unmapped
   const allAncestors = useMemo(() => {
@@ -92,6 +92,29 @@ export default function AncestorSidebar({ ancestors, unmapped, onSelect, selecte
         </button>
       </div>
 
+      {(onViewAll || onViewAs) && (
+        <div className="px-3 py-2 border-b border-gray-800 flex gap-2">
+          {onViewAll && (
+            <button
+              onClick={onViewAll}
+              className="flex-1 text-[11px] text-gray-400 hover:text-white bg-gray-800
+                         hover:bg-gray-700 rounded-lg py-1.5 transition-colors"
+            >
+              View all
+            </button>
+          )}
+          {onViewAs && (
+            <button
+              onClick={onViewAs}
+              className="flex-1 text-[11px] text-gray-400 hover:text-white bg-gray-800
+                         hover:bg-gray-700 rounded-lg py-1.5 transition-colors"
+            >
+              View as…
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
         {grouped.length === 0 && (
           <p className="text-gray-500 text-sm p-4 text-center">No matches</p>
@@ -130,7 +153,7 @@ export default function AncestorSidebar({ ancestors, unmapped, onSelect, selecte
 
       <div className="p-2 border-t border-gray-800 text-center">
         <span className="text-[11px] text-gray-600">
-          {filtered.length} of {allAncestors.length} ancestor{allAncestors.length !== 1 ? 's' : ''}
+          {filtered.length} of {allAncestors.length} people
         </span>
       </div>
     </div>
