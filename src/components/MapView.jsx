@@ -57,20 +57,14 @@ const unclusteredLabelLayer = {
     'text-size': 12,
     'text-anchor': 'left',
     'text-offset': [1.2, 0],
-    'text-allow-overlap': true,
-    'text-ignore-placement': false,
+    'text-allow-overlap': false,
+    'text-optional': true,
     'text-max-width': 12,
   },
   paint: {
     'text-color': '#e5e7eb',
     'text-halo-color': 'rgba(0, 0, 0, 0.8)',
     'text-halo-width': 1.5,
-    // Fade in labels starting at zoom 4, fully visible by zoom 5
-    'text-opacity': [
-      'interpolate', ['linear'], ['zoom'],
-      3.5, 0,
-      4.5, 1,
-    ],
   },
 }
 
@@ -89,7 +83,7 @@ function useIsMobile() {
   return isMobile
 }
 
-export default function MapView({ ancestors, unmapped, onReset }) {
+export default function MapView({ ancestors, unmapped, onReset, onViewAs, onViewAll }) {
   const mapRef = useRef(null)
   const [selected, setSelected] = useState(null)
   const [popupPos, setPopupPos] = useState(null)
@@ -103,11 +97,11 @@ export default function MapView({ ancestors, unmapped, onReset }) {
   }, [ancestors])
 
   const geojson = useMemo(() => {
-    // Offset co-located points vertically so they stack as a column.
-    // ~0.05° ≈ 5.5km — enough room for labels to not overlap.
-    // Stack is centered on the original coordinate.
-    const STEP = 0.05
-    const coordKey = (a) => `${a.lng},${a.lat}`
+    // Spread co-located points in a small circle so they don't stack
+    // into one dot. ~0.002° ≈ 200m — invisible when zoomed out (clustering
+    // handles that), but separates dots when zoomed into a town.
+    const RADIUS = 0.002
+    const coordKey = (a) => `${a.lng.toFixed(4)},${a.lat.toFixed(4)}`
     const groups = new globalThis.Map()
     for (const a of ancestors) {
       const key = coordKey(a)
@@ -117,15 +111,27 @@ export default function MapView({ ancestors, unmapped, onReset }) {
 
     const features = []
     for (const group of groups.values()) {
-      const startOffset = -((group.length - 1) / 2) * STEP
-      group.forEach((a, i) => {
-        const lat = a.lat + startOffset + i * STEP
+      if (group.length === 1) {
+        const a = group[0]
         features.push({
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: [a.lng, lat] },
+          geometry: { type: 'Point', coordinates: [a.lng, a.lat] },
           properties: { id: a.id, name: a.name },
         })
-      })
+      } else {
+        // Arrange in a circle around the shared location
+        const step = (2 * Math.PI) / group.length
+        group.forEach((a, i) => {
+          const angle = step * i - Math.PI / 2 // start at top
+          const lng = a.lng + RADIUS * Math.cos(angle)
+          const lat = a.lat + RADIUS * Math.sin(angle)
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lng, lat] },
+            properties: { id: a.id, name: a.name },
+          })
+        })
+      }
     }
 
     return { type: 'FeatureCollection', features }
@@ -240,6 +246,8 @@ export default function MapView({ ancestors, unmapped, onReset }) {
         selectedId={selected?.id}
         open={sidebarOpen}
         onOpenChange={setSidebarOpen}
+        onViewAs={onViewAs}
+        onViewAll={onViewAll}
       />
 
       <MapGL
@@ -261,8 +269,8 @@ export default function MapView({ ancestors, unmapped, onReset }) {
           type="geojson"
           data={geojson}
           cluster={true}
-          clusterMaxZoom={6}
-          clusterRadius={35}
+          clusterMaxZoom={12}
+          clusterRadius={40}
         >
           <Layer {...clusterLayer} />
           <Layer {...clusterCountLayer} />
