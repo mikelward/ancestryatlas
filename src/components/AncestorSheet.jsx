@@ -16,6 +16,9 @@ function AncestorDetail({ ancestor, onNavigate }) {
       <h2 className="text-xl font-semibold text-white text-center">
         {ancestor.name}
       </h2>
+      {ancestor.relationship && (
+        <p className="text-sm text-amber-400/80 text-center -mt-2">{ancestor.relationship}</p>
+      )}
       <div className="space-y-2 text-sm">
         {ancestor.birthDate && (
           <div className="flex justify-between">

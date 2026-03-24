@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import MapGL, { Source, Layer } from 'react-map-gl/mapbox'
 import StatsOverlay from './StatsOverlay'
+import AncestorSidebar from './AncestorSidebar'
 import { MobileSheet, DesktopPopup } from './AncestorSheet'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN
@@ -45,6 +46,34 @@ const unclusteredPointLayer = {
   },
 }
 
+const unclusteredLabelLayer = {
+  id: 'unclustered-label',
+  type: 'symbol',
+  source: 'ancestors',
+  filter: ['!', ['has', 'point_count']],
+  layout: {
+    'text-field': ['get', 'name'],
+    'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Regular'],
+    'text-size': 12,
+    'text-anchor': 'left',
+    'text-offset': [1.2, 0],
+    'text-allow-overlap': true,
+    'text-ignore-placement': false,
+    'text-max-width': 12,
+  },
+  paint: {
+    'text-color': '#e5e7eb',
+    'text-halo-color': 'rgba(0, 0, 0, 0.8)',
+    'text-halo-width': 1.5,
+    // Fade in labels starting at zoom 4, fully visible by zoom 5
+    'text-opacity': [
+      'interpolate', ['linear'], ['zoom'],
+      3.5, 0,
+      4.5, 1,
+    ],
+  },
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(
     typeof window !== 'undefined' && window.innerWidth < 768
@@ -65,6 +94,7 @@ export default function MapView({ ancestors, unmapped, onReset }) {
   const [selected, setSelected] = useState(null)
   const [popupPos, setPopupPos] = useState(null)
   const isMobile = useIsMobile()
+  const [sidebarOpen, setSidebarOpen] = useState(!isMobile)
 
   const ancestorLookup = useMemo(() => {
     const lookup = new globalThis.Map()
@@ -72,17 +102,34 @@ export default function MapView({ ancestors, unmapped, onReset }) {
     return lookup
   }, [ancestors])
 
-  const geojson = useMemo(
-    () => ({
-      type: 'FeatureCollection',
-      features: ancestors.map((a) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [a.lng, a.lat] },
-        properties: { id: a.id, name: a.name },
-      })),
-    }),
-    [ancestors]
-  )
+  const geojson = useMemo(() => {
+    // Offset co-located points vertically so they stack as a column.
+    // ~0.05° ≈ 5.5km — enough room for labels to not overlap.
+    // Stack is centered on the original coordinate.
+    const STEP = 0.05
+    const coordKey = (a) => `${a.lng},${a.lat}`
+    const groups = new globalThis.Map()
+    for (const a of ancestors) {
+      const key = coordKey(a)
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(a)
+    }
+
+    const features = []
+    for (const group of groups.values()) {
+      const startOffset = -((group.length - 1) / 2) * STEP
+      group.forEach((a, i) => {
+        const lat = a.lat + startOffset + i * STEP
+        features.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [a.lng, lat] },
+          properties: { id: a.id, name: a.name },
+        })
+      })
+    }
+
+    return { type: 'FeatureCollection', features }
+  }, [ancestors])
 
   const initialBounds = useMemo(() => {
     if (ancestors.length === 0) return undefined
@@ -165,10 +212,15 @@ export default function MapView({ ancestors, unmapped, onReset }) {
     [ancestorLookup, flyTo]
   )
 
-  const handleSelectUnmapped = useCallback((ancestor) => {
+  const handleSelectFromList = useCallback((ancestor) => {
     setSelected(ancestor)
-    setPopupPos(null)
-  }, [])
+    if (ancestor.lat != null && ancestor.lng != null) {
+      setPopupPos(null)
+      flyTo(ancestor.lng, ancestor.lat)
+    } else {
+      setPopupPos(null)
+    }
+  }, [flyTo])
 
   const handleClose = useCallback(() => setSelected(null), [])
 
@@ -177,8 +229,17 @@ export default function MapView({ ancestors, unmapped, onReset }) {
       <StatsOverlay
         ancestors={ancestors}
         unmapped={unmapped}
-        onReset={onReset}
-        onSelectUnmapped={handleSelectUnmapped}
+        onSelectUnmapped={handleSelectFromList}
+        sidebarOpen={sidebarOpen}
+      />
+
+      <AncestorSidebar
+        ancestors={ancestors}
+        unmapped={unmapped}
+        onSelect={handleSelectFromList}
+        selectedId={selected?.id}
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
       />
 
       <MapGL
@@ -200,12 +261,13 @@ export default function MapView({ ancestors, unmapped, onReset }) {
           type="geojson"
           data={geojson}
           cluster={true}
-          clusterMaxZoom={14}
-          clusterRadius={50}
+          clusterMaxZoom={6}
+          clusterRadius={35}
         >
           <Layer {...clusterLayer} />
           <Layer {...clusterCountLayer} />
           <Layer {...unclusteredPointLayer} />
+          <Layer {...unclusteredLabelLayer} />
         </Source>
       </MapGL>
 
