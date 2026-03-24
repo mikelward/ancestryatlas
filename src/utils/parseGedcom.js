@@ -64,6 +64,14 @@ function buildTree(tokens) {
   return root
 }
 
+// GEDCOM dates are uppercase ("10 JUL 1882"). Normalize to title case ("10 Jul 1882").
+function normalizeDate(date) {
+  if (!date) return null
+  return date.replace(/\b([A-Z]{3,})\b/g, (m) =>
+    m.charAt(0) + m.slice(1).toLowerCase()
+  )
+}
+
 function findChild(node, tag) {
   return node.children.find((c) => c.tag === tag) || null
 }
@@ -87,11 +95,11 @@ function extractIndividuals(tree) {
     const name = findChildValue(node, 'NAME')?.replace(/\//g, '').trim() || 'Unknown'
 
     const birthNode = findChild(node, 'BIRT')
-    const birthDate = birthNode ? findChildValue(birthNode, 'DATE') : null
+    const birthDate = birthNode ? normalizeDate(findChildValue(birthNode, 'DATE')) : null
     const birthPlace = birthNode ? findChildValue(birthNode, 'PLAC') : null
 
     const deathNode = findChild(node, 'DEAT')
-    const deathDate = deathNode ? findChildValue(deathNode, 'DATE') : null
+    const deathDate = deathNode ? normalizeDate(findChildValue(deathNode, 'DATE')) : null
     const deathPlace = deathNode ? findChildValue(deathNode, 'PLAC') : null
 
     const famcRefs = findAllChildren(node, 'FAMC').map((c) => c.pointer || c.value)

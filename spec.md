@@ -34,6 +34,7 @@ src/
 │   ├── LoadingScreen.jsx      # Geocoding progress bar
 │   ├── MapView.jsx            # Mapbox map, clustering, click handlers
 │   ├── AncestorSheet.jsx      # Bottom sheet (mobile) / popup (desktop)
+│   ├── AncestorSidebar.jsx    # Searchable ancestor list panel
 │   └── StatsOverlay.jsx       # "X ancestors across Y countries"
 └── utils/
     ├── parseGedcom.js         # GEDCOM tokenizer, tree builder, ancestor filter
@@ -108,9 +109,9 @@ Only ancestors with a `birthPlace` are included in the final output. Parent/chil
 | Field | GEDCOM path | Notes |
 |-------|-------------|-------|
 | name | INDI > NAME | Slashes removed (GEDCOM wraps surname in //) |
-| birthDate | INDI > BIRT > DATE | |
+| birthDate | INDI > BIRT > DATE | Months title-cased (JUL → Jul) |
 | birthPlace | INDI > BIRT > PLAC | Required for inclusion |
-| deathDate | INDI > DEAT > DATE | Optional |
+| deathDate | INDI > DEAT > DATE | Optional, months title-cased |
 | deathPlace | INDI > DEAT > PLAC | Optional |
 | photo | INDI > OBJE > FILE | Optional, rarely present |
 | parentIds | Resolved via FAM > HUSB/WIFE where INDI > FAMC matches | |
@@ -142,20 +143,35 @@ Priority order:
 
 GEDCOM place strings are hierarchical (e.g. "New Tiers, Mount Lofty, South Australia, Australia"). Mapbox often doesn't know the most local part and returns a broad region centroid instead.
 
-Strategy: try the full string first. If the result's `feature_type` is broad (`country`, `region`, or `district`), drop the leftmost (most local) part and retry. Continue until we get a specific result or run out of parts.
+Strategy: try all query variations (full string, then dropping the most-local part each time). Rank results by Mapbox `feature_type` specificity and pick the most specific one:
+
+```
+address(0) > street(1) > neighborhood(2) > locality(3) > place(4) > district(6) > region(7) > country(8)
+```
+
+Stop early if we get a result with specificity <= 3 (locality or better).
 
 Example for "New Tiers, Mount Lofty, South Australia, Australia":
-1. Try "New Tiers, Mount Lofty, South Australia, Australia" → returns region (South Australia centroid)
-2. Try "Mount Lofty, South Australia, Australia" → returns place-level result (Adelaide Hills area)
-3. Use that.
+1. Try "New Tiers, Mount Lofty, South Australia, Australia" → returns region (specificity 7)
+2. Try "Mount Lofty, South Australia, Australia" → returns locality (specificity 3) — better, use this
+3. Stop (specificity <= 3).
 
 ### Processing
 
 Sequential (one at a time), not parallel. Simpler and enables smooth progress updates. With ~30 max ancestors and cached duplicates, total time is acceptable.
 
-### Error Handling
+### Unmapped Ancestors
 
-Failed geocodes increment a counter but don't block. The count is displayed in the stats overlay: "3 ancestors could not be mapped".
+Two reasons an ancestor may not appear on the map:
+1. **No birth place in GEDCOM** — detected during parsing, reason: "No birth place in file"
+2. **Geocoding failed** — has a place string but Mapbox couldn't resolve it, reason: `Could not locate "place name"`
+
+Both are tracked with full ancestor data. The stats overlay shows "X not mapped ▼" — expanding it reveals two grouped lists:
+
+- **No birth place in file** — names of ancestors with no PLAC under BIRT
+- **Location not found** — names + the place string that failed geocoding
+
+Each name is clickable (amber link), opening the ancestor's detail card (bottom sheet on mobile, popup on desktop) so you can see their full info.
 
 ---
 
@@ -169,13 +185,18 @@ Failed geocodes increment a counter but don't block. The count is displayed in t
 
 Mapbox GL built-in GeoJSON clustering:
 - `cluster: true` on the Source
-- `clusterMaxZoom: 14`
-- `clusterRadius: 50`
+- `clusterMaxZoom: 9` (clusters stop forming at zoom 10+)
+- `clusterRadius: 35` (smaller than default to expand clusters sooner)
 
-Three layers:
+### Co-located Points
+
+Multiple ancestors born in the same place share identical coordinates and would permanently cluster. To fix this, co-located points are stacked vertically with a small offset (~0.008° ≈ 800m per step), centered on the original coordinate. This keeps them visually grouped at the same location while showing individual labels.
+
+Four layers:
 1. **clusters** — amber circles, size 20→30→40px based on point count
 2. **cluster-count** — text labels showing abbreviated count
 3. **unclustered-point** — amber circles (8px) with white stroke
+4. **unclustered-label** — name labels that fade in at zoom 4–5, positioned to the right of the dot. Uses text halo for readability on dark map. `text-allow-overlap: false` prevents label collisions.
 
 ### Click Handling
 
@@ -191,6 +212,21 @@ Calculated bounding box of all ancestor coordinates with 2-degree padding. Falls
 ### Import Note
 
 react-map-gl v8 changed exports. Must import from `react-map-gl/mapbox`, not `react-map-gl`. The Map component is imported as `MapGL` to avoid shadowing JavaScript's `Map` constructor. Ancestor lookups use `globalThis.Map`.
+
+---
+
+## Ancestor Sidebar
+
+Left-side panel (280px wide) listing all ancestors — both mapped and unmapped.
+
+### Features
+- **Search/filter box** at top — filters by name, birth place, or birth date as you type
+- **Grouped by generation** — sticky headers: Self, Parents, Grandparents, Great-grandparents, Great-great-grandparents
+- **Clickable names** — mapped ancestors fly the map to their pin + open detail card; unmapped ancestors just open the detail card
+- **Selected state** — currently selected ancestor is highlighted
+- **Unmapped indicators** — "No birth place" or "Not found" shown in gray next to unmapped names
+- **Collapsible** — X button hides the panel, hamburger button re-opens it
+- **Footer** — shows "X of Y ancestors" count (reflects search filter)
 
 ---
 
@@ -235,9 +271,10 @@ All tap targets: `min-h-[44px]` for mobile accessibility.
 
 ```
 VITE_MAPBOX_TOKEN=<public token>
+VITE_GEONAMES_USERNAME=<geonames username>
 ```
 
-Mapbox public tokens are safe to expose client-side. Set in `.env.local` (gitignored via `*.local` pattern).
+Mapbox public tokens are safe to expose client-side. GeoNames requires a free account at geonames.org (enable free web services in account settings). Both are set in `.env.local` (gitignored via `*.local` pattern). GeoNames is optional but strongly recommended — it handles historical place names (e.g. "Prussia", "Bohemia") that Mapbox cannot resolve.
 
 ---
 
